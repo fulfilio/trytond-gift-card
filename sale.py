@@ -21,12 +21,12 @@ class SaleLine:
             ('combined', 'Combined'),
         ], 'Gift Card Delivery Mode', states={
             'invisible': ~Bool(Eval('is_gift_card')),
-        }, depends=['is_gift_card']), 'on_change_with_gift_card_delivery_mode'
+        }, depends=['is_gift_card']), 'get_gift_card_delivery_mode'
     )
 
     is_gift_card = fields.Function(
         fields.Boolean('Gift Card'),
-        'on_change_with_is_gift_card'
+        'get_is_gift_card'
     )
     gift_cards = fields.One2Many(
         'gift_card.gift_card', "sale_line", "Gift Cards", readonly=True
@@ -56,7 +56,7 @@ class SaleLine:
     allow_open_amount = fields.Function(
         fields.Boolean("Allow Open Amount?", states={
             'invisible': ~Bool(Eval('is_gift_card'))
-        }, depends=['is_gift_card']), 'on_change_with_allow_open_amount'
+        }, depends=['is_gift_card']), 'get_allow_open_amount'
     )
 
     gc_price = fields.Many2One(
@@ -86,8 +86,20 @@ class SaleLine:
 
     @fields.depends('product')
     def on_change_with_allow_open_amount(self, name=None):
-        if self.product:
-            return self.product.allow_open_amount
+        SaleLine = Pool().get('sale.line')
+
+        return SaleLine.get_allow_open_amount(
+            [self], name='allow_open_amount'
+        )[self.id]
+
+    @classmethod
+    def get_allow_open_amount(cls, lines, name):
+        return {
+            line.id: (
+                line.product.allow_open_amount if line.product else None
+            )
+            for line in lines
+        }
 
     @fields.depends('gc_price', 'unit_price')
     def on_change_gc_price(self):
@@ -107,15 +119,27 @@ class SaleLine:
                 'Gift card amount must be within %s %s and %s %s'
         })
 
+    @classmethod
+    def get_gift_card_delivery_mode(cls, lines, name):
+        res = {}
+        for line in lines:
+            if not (line.product and line.is_gift_card):
+                mode = None
+            else:
+                mode = line.product.gift_card_delivery_mode
+            res[line.id] = mode
+        return res
+
     @fields.depends('product', 'is_gift_card')
     def on_change_with_gift_card_delivery_mode(self, name=None):
         """
         Returns delivery mode of the gift card product
         """
-        if not (self.product and self.is_gift_card):
-            return None
+        SaleLine = Pool().get('sale.line')
 
-        return self.product.gift_card_delivery_mode
+        return SaleLine.get_gift_card_delivery_mode(
+            [self], name='gift_card_delivery_mode'
+        )[self.id]
 
     @classmethod
     def copy(cls, lines, default=None):
@@ -129,7 +153,20 @@ class SaleLine:
         """
         Returns boolean value to tell if product is gift card or not
         """
-        return self.product and self.product.is_gift_card
+        SaleLine = Pool().get('sale.line')
+
+        return SaleLine.get_is_gift_card(
+            [self], name='is_gift_card'
+        )[self.id]
+
+    @classmethod
+    def get_is_gift_card(cls, lines, name):
+        return {
+            line.id: (
+                line.product.is_gift_card if line.product else None
+            )
+            for line in lines
+        }
 
     def get_invoice_line(self):
         """
